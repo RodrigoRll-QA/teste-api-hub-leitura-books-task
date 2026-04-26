@@ -22,13 +22,24 @@ describe('Testes da Funcionalidade Catálogo de Livros', () => {
 
     it('GET - Deve listar livros com filtros e paginação', () => {
         cy.getBooks(token).then((resGeral) => {
-            const total = resGeral.body.books.length;
+            const books = resGeral.body.books;
+            const total = books.length;
+
             cy.log(`📋 **Listagem:** Encontrados ${total} livros no catálogo.`);
 
-            resGeral.body.books.slice(0, 2).forEach((livro) => { 
+            const amostraAleatoria = books
+                .sort(() => Math.random() - 0.5)
+                .slice(0, 3);
+
+            amostraAleatoria.forEach((livro) => {
                 cy.getBooks(token, { category: livro.category, author: livro.author }).then((response) => {
                     expect(response.status).to.eq(200);
-                    cy.log(`🔍 **Filtro:** Validado categoria [${livro.category}] e autor [${livro.author}]`);
+
+                    response.body.books.forEach((itemFiltrado) => {
+                        expect(itemFiltrado.category).to.eq(livro.category);
+                    });
+
+                    cy.log(`🔍 **Filtro Aleatório:** Validada categoria [${livro.category}] com o livro [${livro.title}]`);
                 });
             });
         });
@@ -38,7 +49,7 @@ describe('Testes da Funcionalidade Catálogo de Livros', () => {
         cy.getBooks(token).then((resLista) => {
             const livro = resLista.body.books[Math.floor(Math.random() * resLista.body.books.length)];
             cy.log(`🎲 **Sorteio:** Validando detalhes do livro ID: ${livro.id}`);
-            
+
             cy.api({ method: 'GET', url: `books/${livro.id}`, headers: { authorization: token } }).then((response) => {
                 expect(response.status).to.eq(200);
                 cy.log(`📖 **Detalhes:** Título verificado: ${response.body.book.title}`);
@@ -79,11 +90,11 @@ describe('Testes da Funcionalidade Catálogo de Livros', () => {
         cy.postBook(token, { title: `Antes ${idUnico}`, author: autor, isbn: `ISB${idUnico}`, category: "TI" }).then((resPost) => {
             const id = resPost.body.book.id;
             idParaLimpar = id; // Captura ID para limpeza
-            
+
             cy.putBook(token, id, { title: novoTitulo, author: autor, category: 'Automação' }).then((resPut) => {
                 expect(resPut.status).to.eq(200);
                 cy.log(`📝 **Edição:** Livro ${id} alterado para "${novoTitulo}"`);
-                
+
                 cy.api({ method: 'GET', url: `books/${id}`, headers: { authorization: token } }).then(resGet => {
                     expect(resGet.body.book.title).to.eq(novoTitulo);
                     cy.log('✅ **Persistência:** Alteração confirmada no banco de dados.');
@@ -114,7 +125,7 @@ describe('Testes da Funcionalidade Catálogo de Livros', () => {
         cy.api({ method: 'GET', url: 'books/categories', headers: { authorization: token } }).then(res => {
             cy.log(`🏷️ **Categorias:** ${res.body.categories.length} categorias listadas.`);
         });
-        
+
         cy.api({ method: 'GET', url: 'books/authors', headers: { authorization: token } }).then(res => {
             cy.log(`✍️ **Autores:** ${res.body.authors.length} autores listados.`);
         });
