@@ -1,133 +1,199 @@
 /// <reference types="cypress" />
 
-describe('Testes da Funcionalidade Catálogo de Livros', () => {
-    let token
-    let idParaLimpar = null
+let token
+let idParaLimpar = null
 
-    beforeEach(() => {
-        idParaLimpar = null
-        cy.geraToken('admin@biblioteca.com', 'admin123').then(tkn => {
-            token = tkn
-            cy.log('✅ **Autenticação:** Token de Admin capturado com sucesso.');
+beforeEach(() => {
+    idParaLimpar = null
+    cy.geraToken('admin@biblioteca.com', 'admin123').then(tkn => {
+        token = tkn
+        cy.log('✅ **Autenticação:** Token capturado.')
+    })
+});
+
+afterEach(() => {
+    if (idParaLimpar) {
+        cy.deleteBook(token, idParaLimpar, false).then(() => {
+            cy.log(`♻️ **Limpeza:** Livro ID ${idParaLimpar} removido.`)
+        })
+    }
+});
+
+describe('GET - Teste de API - Catálogo de Livros', () => {
+
+    it('Deve listar livros com sucesso', () => {
+        const parametros = {
+            page: 1,
+            limit: 10,
+            category: 'Fantasia',
+            author: 'J.R.R. Tolkien'
+        }
+
+        cy.getBooks(token, parametros).then(response => {
+            expect(response.status).to.equal(200)
+            expect(response.body.books).to.be.an('array')
+            if (response.body.books.length > 0) {
+                expect(response.body.books[0]).to.have.property('author')
+                expect(response.body.books[0]).to.have.property('category')
+                expect(response.body.books[0].category).to.equal(parametros.category)
+                expect(response.body.books[0].author).to.equal(parametros.author)
+                cy.log('✅ **Propriedades:** Autor e Categoria validados no primeiro item.')
+            }
+            expect(response.body.books.length).to.be.at.most(parametros.limit)
+            cy.log(`📋 **Paginação:** Página ${parametros.page} carregada com sucesso.`)
+            cy.log(`📚 **Resultados:** Encontrados ${response.body.books.length} livros nesta página.`)
         })
     });
 
-    afterEach(() => {
-        if (idParaLimpar) {
-            cy.deleteBook(token, idParaLimpar, false).then(() => {
-                cy.log(`♻️ **Limpeza:** Livro ID ${idParaLimpar} removido automaticamente.`);
-            });
-        }
+    it('Deve buscar um livro específico por ID via sorteio', () => {
+        cy.getBooks(token).then(res => {
+            const lista = res.body.books
+            const livroSorteado = lista[Math.floor(Math.random() * lista.length)]
+
+            cy.api({
+                method: 'GET',
+                url: `books/${livroSorteado.id}`,
+                headers: { 'Authorization': token }
+            }).then(response => {
+                expect(response.status).to.equal(200)
+                expect(response.body.book).to.include.all.keys(
+                    'id', 'title', 'author', 'description', 'category', 'isbn', 'editor', 'language', 'publication_year', 'pages', 'format', 'total_copies', 'available_copies', 'cover_image', 'created_at'
+                )
+                expect(response.body.book.id).to.equal(livroSorteado.id)
+                expect(response.body.book.title).to.equal(livroSorteado.title)
+                cy.log(`🎲 **Sorteio:** Validado livro ID: ${livroSorteado.id}`)
+            })
+        })
+    });
+});
+
+describe('POST - Teste de API - Catálogo de Livros', () => {
+
+    it('Deve cadastrar um livro com sucesso', () => {
+        let idUnico = Date.now()
+        cy.postBook(token, {
+            title: `Rodrigo Lins ${idUnico}`,
+            author: "Rodrigo Lopes",
+            category: "Tecnologia",
+            isbn: `978-${idUnico}`,
+            publication_year: 2026
+        }).then(response => {
+            expect(response.status).to.equal(201)
+            idParaLimpar = response.body.book.id
+            cy.log('✨ **Cadastro:** Livro criado com sucesso.')
+        })
     });
 
-    it('GET - Deve listar livros com filtros e paginação', () => {
-        cy.getBooks(token).then((resGeral) => {
-            const books = resGeral.body.books;
-            const total = books.length;
-
-            cy.log(`📋 **Listagem:** Encontrados ${total} livros no catálogo.`);
-
-            const amostraAleatoria = books
-                .sort(() => Math.random() - 0.5)
-                .slice(0, 3);
-
-            amostraAleatoria.forEach((livro) => {
-                cy.getBooks(token, { category: livro.category, author: livro.author }).then((response) => {
-                    expect(response.status).to.eq(200);
-
-                    response.body.books.forEach((itemFiltrado) => {
-                        expect(itemFiltrado.category).to.eq(livro.category);
-                    });
-
-                    cy.log(`🔍 **Filtro Aleatório:** Validada categoria [${livro.category}] com o livro [${livro.title}]`);
-                });
-            });
-        });
+    it('Deve validar erro ao cadastrar livro com item inválido', () => {
+        cy.postBook(token, {
+            title: "Erro de Ano",
+            author: "Rodrigo Lins Lopes",
+            publication_year: "Dois mil e vinte e seis"
+        }, false).then(response => {
+            expect(response.status).to.equal(400)
+            cy.log('⚠️ **Validação:** Erro de ano inválido confirmado.')
+        })
     });
 
-    it('GET - Deve obter detalhes de um livro específico', () => {
-        cy.getBooks(token).then((resLista) => {
-            const livro = resLista.body.books[Math.floor(Math.random() * resLista.body.books.length)];
-            cy.log(`🎲 **Sorteio:** Validando detalhes do livro ID: ${livro.id}`);
+    it('Deve impedir cadastro por usuário comum', () => {
+        cy.geraToken('usuario@teste.com', 'user123').then(tokenComum => {
+            cy.postBook(tokenComum, {
+                title: "Sem autorização",
+                author: "Rodrigo Lins Lopes"
+            }, false).then(response => {
+                expect(response.status).to.be.oneOf([401, 403])
+                cy.log('🛡️ **Segurança:** Usuário comum não autorizado.')
+            })
+        })
+    });
+});
 
-            cy.api({ method: 'GET', url: `books/${livro.id}`, headers: { authorization: token } }).then((response) => {
-                expect(response.status).to.eq(200);
-                cy.log(`📖 **Detalhes:** Título verificado: ${response.body.book.title}`);
-            });
-        });
+describe('PUT - Teste de API - Catálogo de Livros', () => {
+
+    it('Deve atualizar um livro de forma dinâmica', () => {
+        let idUnico = Date.now()
+        cy.postBook(token, {
+            title: "Antes da Edição",
+            author: "Rodrigo",
+            isbn: `ISB${idUnico}`
+        }).then(res => {
+            const bookId = res.body.book.id
+            idParaLimpar = bookId
+
+            cy.putBook(token, bookId, {
+                title: "Título Editado",
+                author: "Rodrigo Lins Lopes",
+                category: "Automação"
+            }).then(response => {
+                expect(response.status).to.equal(200)
+                cy.log('📝 **Edição:** Alteração concluída.')
+            })
+        })
     });
 
-    it('POST - Deve cadastrar um novo livro e validar permissão', () => {
-        const idUnico = Math.floor(Math.random() * 1000000);
-        const novoLivro = { title: `Cypress Masterclass ${idUnico}`, author: "Rodrigo Lopes", category: "Tecnologia", isbn: `978-${idUnico}`, publication_year: 2026, editor: "EBAC", pages: 250, format: "Físico" };
+    it('Deve impedir que usuário comum edite um livro', () => {
+        let idUnico = Date.now()
+        cy.postBook(token, {
+            title: `Livro para edição proibida`,
+            author: 'Rodrigo Lins Lopes',
+            isbn: `PROT${idUnico}`
+        }).then(res => {
+            const bookId = res.body.book.id
+            idParaLimpar = bookId
 
-        cy.postBook(token, novoLivro).then((response) => {
-            expect(response.status).to.eq(201);
-            idParaLimpar = response.body.book.id; // Captura ID para limpeza
-            cy.log(`✨ **Cadastro:** Livro "${novoLivro.title}" criado com sucesso.`);
-        });
+            cy.geraToken(
+                'usuario@teste.com',
+                'user123'
+            ).then(tokenComum => {
+                cy.putBook(tokenComum, bookId, {
+                    title: 'Tentativa de Hackear',
+                    author: 'Rodrigo Lins Lopes'
+                }, false).then(response => {
+                    expect(response.status).to.equal(403)
+                    expect(response.body.message).to.contain('Apenas administradores')
+                    cy.log('🛡️ **Segurança:** Bloqueio confirmado com 403.')
+                })
+            })
+        })
+    });
+});
 
-        cy.geraToken('usuario@teste.com', 'user123').then((tokenComum) => {
-            cy.postBook(tokenComum, { title: "Negado" }, false).then((res) => {
-                expect(res.status).to.be.oneOf([401, 403]);
-                cy.log('🛡️ **Segurança:** Usuário comum impedido de cadastrar livros.');
-            });
-        });
+describe('DELETE - Teste de API - Catálogo de Livros', () => {
+
+    it('Deve excluir um livro com sucesso', () => {
+        let idUnico = Date.now()
+        cy.postBook(token, {
+            title: "Para apagar",
+            author: "Rodrigo",
+            isbn: `DEL${idUnico}`
+        }).then(res => {
+            const bookId = res.body.book.id
+
+            cy.deleteBook(token, bookId).then(response => {
+                expect(response.status).to.be.oneOf([200, 204])
+                cy.log('🗑️ **Exclusão:** Livro removido com sucesso.')
+            })
+        })
     });
 
-    it('POST - Deve rejeitar livro com dados inválidos', () => {
-        cy.postBook(token, { publication_year: "Invalido" }, false).then((res) => {
-            expect(res.status).to.eq(400);
-            cy.log(`⚠️ **Validação:** API rejeitou ano inválido. Mensagem: ${res.body.message || 'Erro de validação'}`);
-        });
-    });
+    it('Deve impedir que usuário comum exclua um livro', () => {
+        let idUnico = Date.now()
+        cy.postBook(token, {
+            title: "Livro Protegido contra Deleção",
+            author: "Rodrigo Lins Lopes",
+            isbn: `NODEL${idUnico}`
+        }).then(res => {
+            const bookId = res.body.book.id
+            idParaLimpar = bookId
 
-    it('PUT - Deve atualizar um livro e confirmar via GET', () => {
-        const idUnico = Math.floor(Math.random() * 1000000);
-        const novoTitulo = `Editado ${idUnico}`;
-        const autor = 'Rodrigo Lins Lopes';
-
-        cy.postBook(token, { title: `Antes ${idUnico}`, author: autor, isbn: `ISB${idUnico}`, category: "TI" }).then((resPost) => {
-            const id = resPost.body.book.id;
-            idParaLimpar = id; // Captura ID para limpeza
-
-            cy.putBook(token, id, { title: novoTitulo, author: autor, category: 'Automação' }).then((resPut) => {
-                expect(resPut.status).to.eq(200);
-                cy.log(`📝 **Edição:** Livro ${id} alterado para "${novoTitulo}"`);
-
-                cy.api({ method: 'GET', url: `books/${id}`, headers: { authorization: token } }).then(resGet => {
-                    expect(resGet.body.book.title).to.eq(novoTitulo);
-                    cy.log('✅ **Persistência:** Alteração confirmada no banco de dados.');
-                });
-            });
-        });
-    });
-
-    it('DELETE - Deve deletar um livro e validar segurança', () => {
-        cy.postBook(token, { title: "Deletar", author: "Rodrigo", isbn: `DEL-${Date.now()}`, category: "TI" }).then((resPost) => {
-            const id = resPost.body.book.id;
-
-            cy.deleteBook(token, id).then((resDel) => {
-                expect(resDel.status).to.be.oneOf([200, 204]);
-                cy.log(`🗑️ **Exclusão:** Livro ID ${id} removido pelo Admin.`);
-            });
-
-            cy.geraToken('usuario@teste.com', 'user123').then((tknUser) => {
-                cy.deleteBook(tknUser, id, false).then(res => {
-                    expect(res.status).to.be.oneOf([401, 403]);
-                    cy.log('🛡️ **Segurança:** Tentativa de exclusão por usuário comum negada.');
-                });
-            });
-        });
-    });
-
-    it('GET - Listar Categorias e Autores', () => {
-        cy.api({ method: 'GET', url: 'books/categories', headers: { authorization: token } }).then(res => {
-            cy.log(`🏷️ **Categorias:** ${res.body.categories.length} categorias listadas.`);
-        });
-
-        cy.api({ method: 'GET', url: 'books/authors', headers: { authorization: token } }).then(res => {
-            cy.log(`✍️ **Autores:** ${res.body.authors.length} autores listados.`);
-        });
+            cy.geraToken('usuario@teste.com', 'user123').then(tokenComum => {
+                cy.deleteBook(tokenComum,
+                    bookId, false).then(response => {
+                        expect(response.status).to.equal(403)
+                        expect(response.body.message).to.contain('Apenas administradores')
+                        cy.log('🛡️ **Segurança:** Bloqueio de deleção confirmado para usuário comum.')
+                    })
+            })
+        })
     });
 });

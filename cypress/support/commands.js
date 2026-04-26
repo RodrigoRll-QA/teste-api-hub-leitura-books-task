@@ -74,13 +74,14 @@ Cypress.Commands.add('postBook', (token, body, failOnStatusCode = true) => {
 })
 
 
-Cypress.Commands.add('putBook', (token, id, body) => {
-  return cy.api({
-    method: 'PUT',
-    url: `books/${id}`,
-    body: body,
-    headers: { authorization: token }
-  })
+Cypress.Commands.add('putBook', (token, id, body, failOnStatusCode = true) => {
+    return cy.api({
+        method: 'PUT',
+        url: `/books/${id}`,
+        body: body,
+        headers: { authorization: token },
+        failOnStatusCode: failOnStatusCode
+    })
 })
 
 
