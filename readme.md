@@ -26,7 +26,7 @@ Este repositório contém a automação de testes da API "Hub de Leitura", desen
 
 1.  **Clone o repositório:**
     ```bash
-    git clone [https://github.com/RodrigoRll-QA/teste-api-hub-leitura-books-task.git](https://github.com/RodrigoRll-QA/teste-api-hub-leitura-books-task.git)
+    git clone https://github.com/RodrigoRll-QA/teste-api-hub-leitura-books-task.git
     ```
 2.  **Instale as dependências:**
     ```bash
